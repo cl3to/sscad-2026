@@ -1,0 +1,24 @@
+#!/bin/bash
+#SBATCH -p mi2104x           # Fila (partition) a ser utilizada
+#SBATCH -J NBODY             # Nome job
+#SBATCH --output=logs/nbody_%j.out
+#SBATCH --exclusive
+#SBATCH --time 03:00:00
+set -e
+
+module purge
+module load mpich python
+
+export hosts=$(scontrol show hostname $SLURM_JOB_NODELIST | paste -sd "," -)
+# export rel=$(date +%d%m%y)
+export rel="080826"
+
+source $WORK/sscad-2025/.venv/bin/activate
+
+cd $WORK/sscad-2026
+
+# srun --mpi=pmi2 -n 8 --ntasks-per-node=4 bin/nbody-starpu 20
+
+spinner -vv run yml/run_$SLURM_JOB_NUM_NODES.yml -e hosts=$hosts -o out/"$rel"_nbody_"$SLURM_JOB_NUM_NODES"_workers.pkl
+
+rm -f yml/run_$SLURM_JOB_NUM_NODES.yml

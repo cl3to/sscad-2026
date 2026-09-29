@@ -1,0 +1,22 @@
+#!/bin/bash
+#SBATCH -p mi2104x           # Fila (partition) a ser utilizada
+#SBATCH -J TBENCH            # Nome job
+#SBATCH --output=logs/tb_%j.out
+#SBATCH --exclusive
+#SBATCH --time 04:00:00
+set -e
+
+module purge
+module load mpich python
+
+export hosts=$(scontrol show hostname $SLURM_JOB_NODELIST | paste -sd "," -)
+export rel=$(date +%d%m%y)
+# export rel="080826"
+
+source $WORK/sscad-2025/.venv/bin/activate
+
+cd $WORK/sscad-2026
+
+spinner -vv run yml/run_$SLURM_JOB_NUM_NODES.yml -e hosts=$hosts -o out/"$rel"_tb_"$SLURM_JOB_NUM_NODES"_workers.pkl
+
+rm -f yml/run_$SLURM_JOB_NUM_NODES.yml

@@ -1,0 +1,134 @@
+metadata:
+  description: "N-Body simulation"
+  version: "1.0"
+  runs: 5
+  timeout: 300
+  retry: False
+  envvars: []
+
+#  Anchor for capturing output patterns
+output_patters: &output_patters
+  - type: matches
+    name: runtime
+    pattern: "runtime:"
+    lambda: >
+      lambda x:  (
+      float(x.split(":")[1].strip().split()[0])
+      )
+
+applications:
+  mpp:
+    capture: *output_patters
+    command: >
+      KMP_AFFINITY=granularity=thread,scatter
+      KMP_HIDDEN_HELPER_AFFINITY=granularity=thread,scatter
+      OMPTARGET_NUM_EXEC_EVENT_HANDLERS=4
+      OMPTARGET_NUM_DATA_EVENT_HANDLERS=4
+      OMPTARGET_MPI_FRAGMENT_SIZE=2000000000
+      OMPTARGET_NUM_MPI_COMMS=16
+      MPIR_CVAR_CH4_NUM_VCIS=16
+      MPIR_PARAM_CH4_GLOBAL_PROGRESS=0
+      mpirun -hosts {{ hosts }} -ppn 1
+      -np {{ workers }} -env ROCR_VISIBLE_DEVICES={{ dlist }} -env OMPTARGET_DISABLE_HOST_PLUGIN=1
+      numactl --cpunodebind=1 --membind=1 apptainer exec --rocm --sharens {{ container }} llvm-offload-mpi-proxy-device :
+      -np 1 -env ROCR_VISIBLE_DEVICES="" -env OMPTARGET_DISABLE_HOST_PLUGIN=1
+      numactl --cpunodebind=0 --membind=0 apptainer exec --rocm --sharens {{ container }} bin/nbody-ompc {{ size }}
+
+  mpi-openmp:
+    capture: *output_patters
+
+    command: >
+      OMP_NUM_THREADS=4
+      KMP_AFFINITY=granularity=thread,scatter
+      KMP_HIDDEN_HELPER_AFFINITY=granularity=thread,scatter
+      MPIR_CVAR_CH4_NUM_VCIS=16
+      MPIR_PARAM_CH4_GLOBAL_PROGRESS=0
+      ROCR_VISIBLE_DEVICES={{ dlist }}
+      mpirun -hosts {{ hosts }} -ppn 1 -np {{ workers  }} numactl --cpunodebind=1 --membind=1 
+      apptainer exec --rocm --sharens {{ container }} bin/nbody-mpi-openmp {{ size }}
+
+  mpi-hip:
+    capture: *output_patters
+
+    command: >
+      OMP_NUM_THREADS=4
+      KMP_AFFINITY=granularity=thread,scatter
+      KMP_HIDDEN_HELPER_AFFINITY=granularity=thread,scatter
+      MPIR_CVAR_CH4_NUM_VCIS=16
+      MPIR_PARAM_CH4_GLOBAL_PROGRESS=0
+      ROCR_VISIBLE_DEVICES={{ dlist }}
+      mpirun -hosts {{ hosts }} -ppn 1 -np {{ workers  }} numactl --cpunodebind=1 --membind=1 
+      apptainer exec --rocm --sharens {{ container }} bin/nbody-mpi-hip {{ size }}
+
+  starpu-openmp:
+    capture: *output_patters
+
+    command: >
+      OMP_NUM_THREADS=4
+      KMP_AFFINITY=granularity=thread,scatter
+      KMP_HIDDEN_HELPER_AFFINITY=granularity=thread,scatter
+      MPIR_CVAR_CH4_NUM_VCIS=16
+      MPIR_PARAM_CH4_GLOBAL_PROGRESS=0
+      ROCR_VISIBLE_DEVICES={{ dlist }}
+      mpirun -hosts {{ hosts }} -ppn 1 -np {{ workers  }} numactl --cpunodebind=1 --membind=1 
+      apptainer exec --rocm --sharens {{ container }} bin/nbody-starpu-openmp {{ size }}
+
+  starpu-hip:
+    capture: *output_patters
+
+    command: >
+      OMP_NUM_THREADS=4
+      KMP_AFFINITY=granularity=thread,scatter
+      KMP_HIDDEN_HELPER_AFFINITY=granularity=thread,scatter
+      MPIR_CVAR_CH4_NUM_VCIS=16
+      MPIR_PARAM_CH4_GLOBAL_PROGRESS=0
+      ROCR_VISIBLE_DEVICES={{ dlist }}
+      mpirun -hosts {{ hosts }} -ppn 1 -np {{ workers  }} numactl --cpunodebind=1 --membind=1 
+      apptainer exec --rocm --sharens {{ container }} bin/nbody-starpu-hip {{ size }}
+
+
+benchmarks:
+  mpp:
+    container:
+      - /work1/herveyviquel/jcleto/images/mpp.sif
+    size:
+      - 20
+    workers:
+      - 1
+    dlist: ["0,1,2,3"]
+
+  mpi-openmp:
+    container:
+      - /work1/herveyviquel/jcleto/images/rocm-openmp-mpich-starpu_latest.sif
+    size:
+      - 20
+    workers:
+      - 1
+    dlist: ["0,1,2,3"]
+
+  mpi-hip:
+    container:
+      - /work1/herveyviquel/jcleto/images/rocm-openmp-mpich-starpu_latest.sif
+    size:
+      - 20
+    workers:
+      - 1
+    dlist: ["0,1,2,3"]
+
+  starpu-openmp:
+    container:
+      - /work1/herveyviquel/jcleto/images/rocm-openmp-mpich-starpu_latest.sif
+    size:
+      - 20
+    workers:
+      - 1
+    dlist: ["0,1,2,3"]
+
+  starpu-hip:
+    container:
+      - /work1/herveyviquel/jcleto/images/rocm-openmp-mpich-starpu_latest.sif
+    size:
+      - 20
+    workers:
+      - 1
+    dlist: ["0,1,2,3"]    

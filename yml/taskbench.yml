@@ -1,0 +1,191 @@
+metadata:
+  description: Task Bench MPP Benchmark
+  version: "1.0"
+  runs: 3
+  timeout: 400
+  retry: False
+  # success_on_return: [0, 213, 255]
+  envvars: []
+
+#  Anchor for capturing output patterns
+output_patters: &output_patters
+  - type: matches
+    name: total_tasks
+    pattern: "Total Tasks"
+    lambda: >
+      lambda x: (
+        int(x.split("Total Tasks ")[1].strip())
+      )
+  - type: matches
+    name: total_deps
+    pattern: "Total Dependencies"
+    lambda: >
+      lambda x: (
+        int(x.split("Total Dependencies ")[1].strip())
+      )
+  - type: matches
+    name: total_flops
+    pattern: "Total FLOPs"
+    lambda: >
+      lambda x: (
+        int(x.split("Total FLOPs ")[1].strip())
+      )
+  - type: matches
+    name: total_bytes
+    pattern: "Total Bytes"
+    lambda: >
+      lambda x: (
+        int(x.split("Total Bytes ")[1].strip())
+      )
+  - type: matches
+    name: wall_time
+    pattern: "Elapsed Time"
+    lambda: >
+      lambda x: (lambda m,e: float(m) * 10**int(e))(
+      *x.split("Elapsed Time ")[1]
+        .split(" seconds")[0]
+        .strip()
+        .lower()
+        .split("e", 1)
+      )
+
+
+applications:
+
+  mpi_openmp:
+    capture: *output_patters
+
+    command: >
+      KMP_AFFINITY=granularity=thread,scatter
+      KMP_HIDDEN_HELPER_AFFINITY=granularity=thread,scatter
+      MPIR_CVAR_CH4_NUM_VCIS={{ vcis }}
+      MPIR_PARAM_CH4_GLOBAL_PROGRESS=0
+      LIBOMP_NUM_HIDDEN_HELPER_THREADS=8
+      OMP_NUM_THREADS=16
+      OMPTARGET_QUERY_COUNT_MAX=1000
+      OMPTARGET_QUERY_COUNT_THRESHOLD=1000
+      mpirun -hosts {{ hosts }} -ppn 1
+      -np {{ workers }} numactl --cpunodebind=1 --membind=1 apptainer exec --rocm --sharens {{ container }} {{ version }}
+      -steps {{ steps }} -width {{ workers * width }} -type {{ type }} -radix {{ radix }} -output {{ 2 ** output }} -kernel {{ kernel }} -iter {{ 10 ** size }}
+  
+  starpu:
+    capture: *output_patters
+
+    command: >
+      KMP_AFFINITY=granularity=thread,scatter
+      KMP_HIDDEN_HELPER_AFFINITY=granularity=thread,scatter
+      MPIR_CVAR_CH4_NUM_VCIS={{ vcis }}
+      MPIR_PARAM_CH4_GLOBAL_PROGRESS=0
+      LIBOMP_NUM_HIDDEN_HELPER_THREADS=8
+      OMP_NUM_THREADS=16
+      OMPTARGET_QUERY_COUNT_MAX=1000
+      OMPTARGET_QUERY_COUNT_THRESHOLD=1000
+      mpirun -hosts {{ hosts }} -ppn 1
+      -np {{ workers }} numactl --cpunodebind=1 --membind=1 apptainer exec --rocm --sharens {{ container }} {{ version }}
+      -steps {{ steps }} -width {{ workers * width }} -type {{ type }} -radix {{ radix }} -output {{ 2 ** output }} -kernel {{ kernel }} -iter {{ 10 ** size }} -core 16
+  
+  # mpp:
+  #   capture: *output_patters
+
+  #   command: >
+  #     KMP_AFFINITY=granularity=thread,scatter
+  #     KMP_HIDDEN_HELPER_AFFINITY=granularity=thread,scatter
+  #     OMPTARGET_NUM_EXEC_EVENT_HANDLERS=4
+  #     OMPTARGET_NUM_DATA_EVENT_HANDLERS=4
+  #     OMPTARGET_MPI_FRAGMENT_SIZE=2000000000
+  #     OMPTARGET_NUM_MPI_COMMS={{ workers * 4 }}
+  #     MPIR_CVAR_CH4_NUM_VCIS={{ workers * 4 }}
+  #     MPIR_PARAM_CH4_GLOBAL_PROGRESS=0
+  #     MPIR_CVAR_ENABLE_GPU=1
+  #     LIBOMP_NUM_HIDDEN_HELPER_THREADS={{ hht }}
+  #     OMPTARGET_QUERY_COUNT_MAX=1000
+  #     OMPTARGET_QUERY_COUNT_THRESHOLD=1000
+  #     mpirun -hosts {{ hosts }} -ppn 1
+  #     -np {{ workers }} -env ROCR_VISIBLE_DEVICES={{ dlist }} numactl --cpunodebind=1 --membind=1 apptainer exec --rocm --sharens {{ container }} llvm-offload-mpi-proxy-device :
+  #     -env ROCR_VISIBLE_DEVICES="" -np 1 numactl --cpunodebind=0 --membind=0 apptainer exec --rocm --sharens {{ container }} {{ version }}
+  #     -steps {{ steps }} -width {{ workers * width }} -type {{ type }} -radix {{ radix }} -output {{ 2 ** output }} -kernel {{ kernel }} -iter {{ 10 ** size }}
+
+benchmarks:
+  mpi_openmp:
+    container:
+      - /work1/herveyviquel/jcleto/images/rocm-openmp-mpich-starpu_latest.sif
+    version:
+      - bin/tb_mpi_openmp
+    workers:
+      - 1
+    dlist: ["0,1,2,3"]
+    hht: [48]
+    vcis: [10]
+    ngraphs: [1]
+    width: [16]
+    steps: [10]
+    # nblocks: [1024]
+    # tpblock: [512]
+    kernel:
+      - compute_bound
+    type:
+      - spread
+      - fft
+      - stencil_1d
+      - trivial
+      - nearest
+    radix: [5]
+    output: [4]
+    size: [1, 2, 3, 4, 5, 6, 7, 8]
+
+  starpu:
+    container:
+      - /work1/herveyviquel/jcleto/images/rocm-openmp-mpich-starpu_latest.sif
+    version:
+      - bin/tb_starpu
+    workers:
+      - 1
+    dlist: ["0,1,2,3"]
+    hht: [48]
+    vcis: [10]
+    ngraphs: [1]
+    width: [16]
+    steps: [10]
+    # nblocks: [1024]
+    # tpblock: [512]
+    kernel:
+      - compute_bound
+    type:
+      - spread
+      - fft
+      - stencil_1d
+      - trivial
+      - nearest
+    radix: [5]
+    output: [4]
+    size: [1, 2, 3, 4, 5, 6, 7, 8]
+
+  # mpp:
+  #   container:
+  #     - /work1/herveyviquel/jcleto/images/mpp.sif
+  #   version:
+  #     - bin/tb_mpp
+  #   workers:
+  #     - 1
+  #   #dlist: ["0"]
+  #   dlist: [ "0,1,2,3"]
+  #   hht: [48]
+  #   vcis: [40]
+  #   ngraphs: [1]
+  #   width: [40]
+  #   steps: [10]
+  #   # nblocks: [1024]
+  #   # tpblock: [512]
+  #   kernel:
+  #     - compute_bound
+  #   type:
+  #     - spread
+  #     - fft
+  #     - stencil_1d
+  #     - trivial
+  #     - nearest
+  #   radix: [5]
+  #   output: [4]
+  #   # output: [4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26]
+  #   size: [1, 2, 3, 4, 5, 6, 7, 8]
+  #   # size: [20]

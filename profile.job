@@ -1,0 +1,69 @@
+#!/bin/bash
+#SBATCH -p mi2104x 
+#SBATCH --job-name=NBODY-PROF
+#SBATCH --nodes=4                     # Requisita exatamente 4 nós
+#SBATCH --time=01:00:00               # Tempo máximo de execução
+#SBATCH --output=logs/profile_nbody_%j.log  # Arquivo de saída com o ID do job
+#SBATCH --exclusive                   # Garante uso exclusivo dos nós para profiling preciso
+
+set -e
+
+# 1. Carrega os módulos necessários do seu cluster (Ajuste os nomes conforme seu ambiente)
+module purge
+module load mpich python
+
+# 2. Definição de variáveis para facilitar a leitura
+IMAGE="/work1/herveyviquel/jcleto/images/rocm-openmp-mpich-starpu_latest.sif"
+HOST_BINARY="bin/nbody" # TODO: Insira o nome do binário host aqui
+
+echo "Iniciando o job de profiling em 4 nós..."
+echo "Nós alocados: $SLURM_JOB_NODELIST"
+
+export hosts=$(scontrol show hostname $SLURM_JOB_NODELIST | paste -sd "," -)
+
+cd $WORK/sscad-2026
+
+# 3. Execução do MPMD com o rocprofv3 dentro do container
+# O mpirun geralmente herda os hosts alocados pelo SLURM automaticamente, 
+# dispensando o uso manual da flag "-hosts".
+
+export KMP_AFFINITY=granularity=thread,scatter
+export KMP_HIDDEN_HELPER_AFFINITY=granularity=thread,scatter  
+export ter OMPTARGET_NUM_EXEC_EVENT_HANDLERS=4 
+export OMPTARGET_NUM_DATA_EVENT_HANDLERS=4     
+export OMPTARGET_MPI_FRAGMENT_SIZE=2000000000  
+export OMPTARGET_NUM_MPI_COMMS=16              
+export MPIR_CVAR_CH4_NUM_VCIS=16               
+export MPIR_PARAM_CH4_GLOBAL_PROGRESS=0
+
+
+# mpirun \
+#   -np 4 \
+#   -hosts $hosts \
+#   -env ROCR_VISIBLE_DEVICES=0,1,2,3 \
+#   -env OMPTARGET_DISABLE_MPI_PLUGIN=1 \
+#   -env OMPTARGET_DISABLE_HOST_PLUGIN=1 \
+#   apptainer exec --rocm --sharens $IMAGE \
+#   rocprofv3 --stats --sys-trace --output-format pftrace --summary --summary-output-file summary_device_%hostname%_%pid%.txt -d ompc_prof_device_%hostname%_%pid% -- llvm-offload-mpi-proxy-device \
+#   : \
+#   -np 1 \
+#   -env ROCR_VISIBLE_DEVICES="" \
+#   -env OMPTARGET_DISABLE_HOST_PLUGIN=1 \
+#   apptainer exec --rocm --sharens $IMAGE \
+#   rocprofv3 --stats --sys-trace --output-format pftrace --summary --summary-output-file summary_host_%hostname%_%pid%.txt -d ompc_prof_host_%hostname%_%pid% -- $HOST_BINARY 20
+
+
+mpirun \
+  -np 16 \
+  -ppn 4 \
+  -hosts $hosts \
+  -env ROCR_VISIBLE_DEVICES=0,1,2,3 \
+  -env OMPTARGET_DISABLE_MPI_PLUGIN=1 \
+  -env OMPTARGET_DISABLE_HOST_PLUGIN=1 \
+  apptainer exec --rocm --sharens $IMAGE \
+  rocprofv3 --stats --sys-trace --output-format pftrace --summary --summary-output-file summary_host_%hostname%_%pid%.txt -d starpu_omp_prof_%hostname%_%pid% -- $HOST_BINARY 20
+
+
+
+
+echo "Profiling concluído com sucesso!"
